@@ -1,0 +1,82 @@
+name: Build Split Router APK
+
+on:
+  push:
+    branches:
+      - experiment/shizzi-split-router
+    paths:
+      - 'split-router/**'
+      - '.github/workflows/split-router-build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: split-router-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out patch branch
+        uses: actions/checkout@v5
+
+      - name: Clone pinned Shizzi upstream
+        run: |
+          git clone https://github.com/carlelieser/shizzi.git shizzi-src
+          cd shizzi-src
+          git checkout 4f8f049a2090db25fa7346c1581d9d4b59351d2a
+
+      - name: Apply Split Router overlay
+        run: cp -R split-router/replacements/. shizzi-src/
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.3'
+          cache-dependency-path: shizzi-src/datapath/go.sum
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install pinned NDK
+        run: sdkmanager --install "ndk;27.0.12077973"
+
+      - name: Install gomobile
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          gomobile init
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Test split routing datapath
+        run: cd shizzi-src/datapath && go test ./...
+
+      - name: Vet Android datapath
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.0.12077973
+        run: |
+          CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+          cd shizzi-src/datapath
+          CGO_ENABLED=1 GOOS=android GOARCH=arm64 CC="$CC" go vet ./...
+
+      - name: Build debug APK
+        working-directory: shizzi-src
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v5
+        with:
+          name: split-router-debug
+          path: shizzi-src/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
