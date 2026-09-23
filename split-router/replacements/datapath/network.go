@@ -2,6 +2,7 @@ package datapath
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"strings"
 	"sync"
@@ -83,6 +84,7 @@ func (r *routeSelector) handleFor(route routeKind) uint64 {
 func (r *routeSelector) dial(network, address string) (net.Conn, routeKind, error) {
 	route := r.routeForAddress(address)
 	handle := r.handleFor(route)
+	log.Printf("split-router route=%s network=%s dest=%s", route, network, address)
 	if handle == unbound {
 		return nil, route, fmt.Errorf("%s upstream unavailable", route)
 	}
